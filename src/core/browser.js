@@ -6,7 +6,7 @@ puppeteer.use(StealthPlugin());
 
 module.exports = async function createBrowser() {
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: "new",
     protocolTimeout: 70 * 60 * 1000, // ⬅️ 70 minutos
     slowMo: 30,
     args: [

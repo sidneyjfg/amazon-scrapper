@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  amazon-scrapper:
+    image: sidneyjfg/amazon-scrapper:latest
+    container_name: amazon-scrapper
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    volumes:
+      - ./downloads:/app/downloads
+      - ./state:/app/state
+      - ./logs:/app/logs
+
+    # Opcional: limita recursos
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
+
+    # Garante timezone correto (opcional)
+    environment:
+      - TZ=America/Sao_Paulo
