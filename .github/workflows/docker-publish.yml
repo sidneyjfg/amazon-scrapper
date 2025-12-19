@@ -11,32 +11,21 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  docker:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout do repositório
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Log in to GHCR
+      - name: 🔐 Login no GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: sidneyjfg
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and Push Image
+      - name: 🐳 Build e Push da imagem
         uses: docker/build-push-action@v5
         with:
           context: .
