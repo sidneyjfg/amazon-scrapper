@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   amazon-scrapper:
-    image: sidneyjfg/amazon-scrapper:latest
+    image: ghcr.io/sidneyjfg/amazon-scrapper:latest
     container_name: amazon-scrapper
     restart: unless-stopped
 

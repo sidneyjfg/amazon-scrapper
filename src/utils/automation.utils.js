@@ -2,7 +2,16 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const Client = require('ssh2-sftp-client');
-
+async function cleanDirectory(dirPath) {
+  try {
+    await fs.rm(dirPath, { recursive: true, force: true });
+    await fs.mkdir(dirPath, { recursive: true });
+    console.log(`🧹 Diretório limpo: ${dirPath}`);
+  } catch (err) {
+    console.error(`❌ Erro ao limpar diretório ${dirPath}`, err);
+    throw err;
+  }
+}
 
 /**
  * ⏳ Delay simples
@@ -215,5 +224,6 @@ module.exports = {
   waitForDownloadComplete,
   extractXmlsAndClean,
   prepareDownloads,
-  sendFilesViaSFTP
+  sendFilesViaSFTP,
+  cleanDirectory
 };

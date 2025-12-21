@@ -5,7 +5,8 @@ const {
   extractXmlsAndClean,
   prepareDownloads,
   sendFilesViaSFTP,
-  delay
+  delay,
+  cleanDirectory
 } = require('../utils/automation.utils');
 const { filterXmlsByNatOp } = require('../utils/xml.utils');
 
@@ -31,7 +32,9 @@ async function download(page) {
   console.log(`✅ Download concluído: ${zipPath}`);
 
   await delay(3000);
-
+  console.log('🧹 Limpando diretório para extração...');
+  await cleanDirectory(unzipDir);
+  await delay(1000);
   // 📦 extrai XMLs
   const extractedCount = await extractXmlsAndClean(zipPath, unzipDir);
   console.log(`📦 XMLs extraídos: ${extractedCount}`);
