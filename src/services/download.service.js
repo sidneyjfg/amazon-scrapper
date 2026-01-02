@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const {
-  waitForStableZip,
+  waitForDownloadComplete,
   extractXmlsAndClean,
   prepareDownloads,
   sendFilesViaSFTP,
@@ -28,7 +28,8 @@ async function download(page) {
   await prepareDownloads(downloadDir, 'extraido');
 
   // ⏳ aguarda ZIP
-  const zipPath = await waitForStableZip(downloadDir, 320000); // <--- E A CHAMADA AQUI  console.log(`✅ Download concluído: ${zipPath}`);
+  const zipPath = await waitForDownloadComplete(downloadDir, 320000);
+  console.log(`✅ Download concluído: ${zipPath}`);
 
   await delay(3000);
   console.log('🧹 Limpando diretório para extração...');
