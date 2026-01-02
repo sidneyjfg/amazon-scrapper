@@ -17,9 +17,21 @@ async function login(page, {
   await page.goto(platformUrl, { waitUntil: 'networkidle0' });
   await delay(await getRandomDelay(2000, 3500));
 
+  // ================= VERIFICAR SE JÁ ESTÁ LOGADO =================
+  const alreadyLoggedIn = await page.evaluate(() => {
+    return !!document.querySelector('div.nav-button[data-test-tag="hamburger-icon"]') ||
+      !!document.querySelector('button.full-page-account-switcher-account-details');
+  });
+
+  if (alreadyLoggedIn) {
+    console.log('ℹ️ Já está logado, pulando autenticação...');
+    await selectBrazilAccount(page);
+    return;
+  }
+
   // ================= EMAIL =================
   console.log('✍️ Digitando e-mail...');
-  await page.waitForSelector('#ap_email', { visible: true });
+  await page.waitForSelector('#ap_email', { visible: true, timeout: 10000 });
   await page.type('#ap_email', login, { delay: 100 });
 
   await delay(await getRandomDelay(800, 1200));
@@ -71,10 +83,16 @@ async function login(page, {
 async function selectBrazilAccount(page) {
   console.log('🌍 Selecionando conta Brazil...');
 
-  await page.waitForSelector(
+  // Verificar se a tela de seleção de conta aparece (timeout curto)
+  const accountSwitcher = await page.waitForSelector(
     'button.full-page-account-switcher-account-details',
-    { visible: true }
-  );
+    { visible: true, timeout: 5000 }
+  ).catch(() => null);
+
+  if (!accountSwitcher) {
+    console.log('ℹ️ Seleção de conta não necessária, já está na conta correta.');
+    return;
+  }
 
   await page.evaluate(() => {
     document

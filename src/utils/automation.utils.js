@@ -4,8 +4,8 @@ const path = require('path');
 const Client = require('ssh2-sftp-client');
 async function cleanDirectory(dirPath) {
   try {
-    await fs.rm(dirPath, { recursive: true, force: true });
-    await fs.mkdir(dirPath, { recursive: true });
+    await fsp.rm(dirPath, { recursive: true, force: true });
+    await fsp.mkdir(dirPath, { recursive: true });
     console.log(`🧹 Diretório limpo: ${dirPath}`);
   } catch (err) {
     console.error(`❌ Erro ao limpar diretório ${dirPath}`, err);
