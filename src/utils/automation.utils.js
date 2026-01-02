@@ -1,11 +1,18 @@
-const fs = require('fs');
-const fsp = require('fs').promises;
+const fs = require('fs'); // Versão Sync (para readdirSync, etc)
+const fsp = require('fs').promises; // Versão Promise (para rm, mkdir async)
 const path = require('path');
 const Client = require('ssh2-sftp-client');
+const AdmZip = require('adm-zip');
+const { loadSentFiles, markAsSent } = require('./state.utils');
+
+/**
+ * 🧹 Limpa e recria o diretório (Corrigido para usar Promises)
+ */
 async function cleanDirectory(dirPath) {
   try {
-    await fs.rm(dirPath, { recursive: true, force: true });
-    await fs.mkdir(dirPath, { recursive: true });
+    // Usa fsp (promises) para permitir o await
+    await fsp.rm(dirPath, { recursive: true, force: true });
+    await fsp.mkdir(dirPath, { recursive: true });
     console.log(`🧹 Diretório limpo: ${dirPath}`);
   } catch (err) {
     console.error(`❌ Erro ao limpar diretório ${dirPath}`, err);
@@ -15,44 +22,55 @@ async function cleanDirectory(dirPath) {
 
 /**
  * ⏳ Delay simples
- * @param {number} ms
  */
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
- * 🎲 Delay aleatório (comportamento humano)
- * @param {number} min
- * @param {number} max
+ * 🎲 Delay aleatório
  */
 async function getRandomDelay(min = 500, max = 1500) {
-  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
-  return ms;
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ * 🔍 Monitora o download verificando se o arquivo está estável
+ */
 async function waitForStableZip(downloadDir, timeoutMs = 300000) {
   const start = Date.now();
 
   while (true) {
-    const files = fs.readdirSync(downloadDir);
+    if (Date.now() - start > timeoutMs) {
+      throw new Error('⏰ Timeout aguardando ZIP válido');
+    }
 
+    let files;
+    try {
+      files = fs.readdirSync(downloadDir);
+    } catch (e) {
+      await delay(1000);
+      continue;
+    }
+
+    // Procura ZIP que não tenha .crdownload ou .part associado
     const zip = files.find(f =>
-      f.endsWith('.zip') &&
-      !files.includes(`${f}.crdownload`)
+      f.toLowerCase().endsWith('.zip') &&
+      !files.includes(f + '.crdownload') &&
+      !files.includes(f + '.part')
     );
 
     if (zip) {
       const fullPath = path.join(downloadDir, zip);
-      const size = fs.statSync(fullPath).size;
-
-      if (size > 1024) {
-        return fullPath;
+      try {
+        const size = fs.statSync(fullPath).size;
+        if (size > 1024) { // Maior que 1KB
+          await delay(1000); // Delay de segurança
+          return fullPath;
+        }
+      } catch (err) {
+        // Ignora erro de acesso e tenta de novo
       }
-    }
-
-    if (Date.now() - start > timeoutMs) {
-      throw new Error('⏰ Timeout aguardando ZIP válido');
     }
 
     await delay(1000);
@@ -60,99 +78,55 @@ async function waitForStableZip(downloadDir, timeoutMs = 300000) {
 }
 
 function isZipFile(filePath) {
-  const fd = fs.openSync(filePath, 'r');
-  const buffer = Buffer.alloc(4);
-  fs.readSync(fd, buffer, 0, 4, 0);
-  fs.closeSync(fd);
-
-  return buffer.toString('utf8', 0, 2) === 'PK';
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buffer = Buffer.alloc(4);
+    fs.readSync(fd, buffer, 0, 4, 0);
+    fs.closeSync(fd);
+    return buffer.toString('utf8', 0, 2) === 'PK';
+  } catch (e) {
+    return false;
+  }
 }
-
-/**
- * 📥 Aguarda o download de um arquivo (ZIP, PDF, etc)
- * Monitora diretório até aparecer arquivo final
- */
-async function waitForDownloadComplete(downloadDir, timeoutMs = 300000) {
-  const start = Date.now();
-
-  return new Promise((resolve, reject) => {
-    const interval = setInterval(() => {
-      const files = require('fs').readdirSync(downloadDir);
-
-      const completedZip = files.find(f =>
-        f.toLowerCase().endsWith('.zip')
-      );
-
-      if (completedZip) {
-        clearInterval(interval);
-        resolve(path.join(downloadDir, completedZip));
-      }
-
-      if (Date.now() - start > timeoutMs) {
-        clearInterval(interval);
-        reject(new Error('⏰ Timeout aguardando download do ZIP'));
-      }
-    }, 1000);
-  });
-}
-
 
 /**
  * 📦 Prepara diretório de downloads
  */
 async function prepareDownloads(baseDir, extractFolder = 'extraido') {
   const extractPath = path.join(baseDir, extractFolder);
-
-  if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir, { recursive: true });
-  }
-
-  if (!fs.existsSync(extractPath)) {
-    fs.mkdirSync(extractPath, { recursive: true });
-  }
+  try {
+    await fsp.mkdir(baseDir, { recursive: true });
+    await fsp.mkdir(extractPath, { recursive: true });
+  } catch (e) { }
 }
-
 
 /**
  * 🧾 Descompacta ZIP e remove o arquivo original
- * (implementação real pode usar unzipper / adm-zip)
  */
 async function extractXmlsAndClean(zipPath, outputDir) {
-  const AdmZip = require('adm-zip');
+  if (!fs.existsSync(zipPath)) throw new Error(`Arquivo não encontrado: ${zipPath}`);
 
   const stat = fs.statSync(zipPath);
-
-  if (stat.size < 1024) {
-    throw new Error(`Arquivo ZIP muito pequeno: ${zipPath}`);
-  }
-
-  if (!isZipFile(zipPath)) {
-    const preview = fs.readFileSync(zipPath, 'utf8').slice(0, 300);
-    throw new Error(
-      `Arquivo baixado NÃO é ZIP.\nConteúdo inicial:\n${preview}`
-    );
-  }
+  if (stat.size < 1024) throw new Error(`Arquivo ZIP muito pequeno.`);
+  if (!isZipFile(zipPath)) throw new Error(`Arquivo não é um ZIP válido.`);
 
   const zip = new AdmZip(zipPath);
   zip.extractAllTo(outputDir, true);
 
-  fs.unlinkSync(zipPath);
+  fs.unlinkSync(zipPath); // Apaga o zip para economizar espaço
 
   return fs.readdirSync(outputDir)
     .filter(f => f.toLowerCase().endsWith('.xml')).length;
 }
 
-
-
-
 /**
- * 🚚 Envio via SFTP (stub pronto)
- * Aqui você pluga ssh2-sftp-client
+ * 🚚 Envio via SFTP
+ * @param {string} directory - Pasta onde estão os arquivos
+ * @param {string} clientId
+ * @param {string} platformId
+ * @param {Array<string>|null} fileList - Lista opcional de arquivos permitidos (filtro)
  */
-
-const { loadSentFiles, markAsSent } = require('./state.utils');
-
-async function sendFilesViaSFTP(directory, clientId, platformId) {
+async function sendFilesViaSFTP(directory, clientId, platformId, fileList = null) {
   const sftp = new Client();
 
   const config = {
@@ -162,21 +136,17 @@ async function sendFilesViaSFTP(directory, clientId, platformId) {
     password: process.env.SFTP_PASSWORD,
   };
 
-  const remoteBase =
-    process.env.SFTP_BASE_PATH || '/uploads';
+  const remoteBase = process.env.SFTP_BASE_PATH || '/uploads';
+  const remoteDir = path.posix.join(remoteBase, clientId, platformId, new Date().toISOString().slice(0, 10));
 
-  const remoteDir = path.posix.join(
-    remoteBase,
-    clientId,
-    platformId,
-    new Date().toISOString().slice(0, 10)
-  );
-
+  console.log(`🔌 Conectando SFTP...`);
   await sftp.connect(config);
   await sftp.mkdir(remoteDir, true);
 
   const sentFiles = loadSentFiles();
-  const files = fs.readdirSync(directory);
+
+  // LÓGICA DO FILTRO: Se passou fileList, usa ela. Se não, lê tudo da pasta.
+  const files = fileList ? fileList : fs.readdirSync(directory);
 
   let sentCount = 0;
   let skippedCount = 0;
@@ -191,21 +161,21 @@ async function sendFilesViaSFTP(directory, clientId, platformId) {
     }
 
     const localPath = path.join(directory, file);
+    // Verifica se arquivo existe antes de enviar (caso filtro tenha nome errado)
+    if (!fs.existsSync(localPath)) continue;
+
     const remotePath = path.posix.join(remoteDir, file);
 
+    console.log(`⬆️ Enviando: ${file}`);
     await sftp.put(localPath, remotePath);
 
     markAsSent(file);
     sentCount++;
-
-    console.log(`📤 Enviado com sucesso: ${file}`);
   }
 
   await sftp.end();
 
-  console.log('📡 Upload SFTP concluído com sucesso.');
-  console.log(`✅ Enviados agora: ${sentCount}`);
-  console.log(`⏭️ Pulados (já enviados): ${skippedCount}`);
+  console.log(`✅ Upload SFTP: ${sentCount} enviados, ${skippedCount} pulados.`);
 
   return {
     success: true,
@@ -213,15 +183,12 @@ async function sendFilesViaSFTP(directory, clientId, platformId) {
     filesSent: sentCount,
     skipped: skippedCount
   };
-
 }
-
-
 
 module.exports = {
   delay,
   getRandomDelay,
-  waitForDownloadComplete,
+  waitForStableZip,
   extractXmlsAndClean,
   prepareDownloads,
   sendFilesViaSFTP,
