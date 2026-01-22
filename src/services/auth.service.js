@@ -55,24 +55,29 @@ async function login(page, {
 
   // ================= TOTP =================
   console.log('🔐 Verificando MFA...');
-  const hasTotp = await page.$('#auth-mfa-otpcode');
+  const hasTotp = await Promise.race([
+    page.waitForSelector('#auth-mfa-otpcode', { timeout: 8000 }).then(() => true).catch(() => false),
+    page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 8000 }).then(() => false).catch(() => false)
+  ]);
 
   if (hasTotp) {
-    console.log('🔢 Campo TOTP encontrado');
+    console.log('🔐 MFA solicitado');
+
+    await page.waitForSelector('#auth-mfa-otpcode', { visible: true });
 
     const token = await getTOTP();
     await page.type('#auth-mfa-otpcode', token, { delay: 100 });
 
-    await delay(await getRandomDelay(800, 1200));
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle0' }),
+      page.keyboard.press('Enter')
+    ]);
 
-    // Normalmente é submit implicitamente
-    await page.keyboard.press('Enter');
-
-    await page.waitForNavigation({ waitUntil: 'networkidle0' });
     console.log('✅ MFA confirmado');
   } else {
-    console.log('ℹ️ MFA não solicitado');
+    console.log('ℹ️ Login sem MFA');
   }
+
 
   console.log('✅ Login realizado com sucesso');
 
