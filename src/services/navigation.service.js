@@ -3,18 +3,58 @@ require('dotenv').config();
 
 async function navigate(page) {
   // ===== navegação até faturador =====
-  await page.waitForSelector('div.nav-button[data-test-tag="hamburger-icon"]');
-  await page.click('div.nav-button[data-test-tag="hamburger-icon"]');
+  await page.waitForFunction(() => {
+    const host = document.querySelector('navigation-hamburger-menu');
+    return host && host.shadowRoot && host.shadowRoot.querySelector('.menu__hamburger-button');
+  });
+
+  await page.evaluate(() => {
+    const host = document.querySelector('navigation-hamburger-menu');
+    const shadow = host.shadowRoot;
+    const btn = shadow.querySelector('.menu__hamburger-button');
+    btn.click();
+  });
 
   await delay(await getRandomDelay(1000, 1500));
 
-  await page.waitForSelector('div[data-menu-id="reports"]');
-  await page.hover('div[data-menu-id="reports"]');
+  // Espera o componente existir
+  await page.waitForFunction(() => {
+    const host = document.querySelector('navigation-hamburger-menu');
+    return host && host.shadowRoot;
+  });
 
-  const faturador = await page.$('a[data-menu-id="invoicer-console"]');
+  // Hover em "Relatórios" dentro do Shadow DOM
+  await page.evaluate(() => {
+    const host = document.querySelector('navigation-hamburger-menu');
+    const shadow = host.shadowRoot;
+
+    const relatorios = shadow.querySelector('[data-test-tag="menu__section-reports"]');
+    if (!relatorios) throw new Error('Seção Relatórios não encontrada');
+
+    const fireHover = (el) => {
+      el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+      el.dispatchEvent(new PointerEvent('pointerenter', { bubbles: true }));
+    };
+
+    fireHover(relatorios);
+  });
+
+  // Espera o botão Faturador aparecer dentro do Shadow
+  await page.waitForFunction(() => {
+    const shadow = document.querySelector('navigation-hamburger-menu')?.shadowRoot;
+    return shadow?.querySelector('[data-test-tag="menu__button-invoicer-console"]');
+  });
+
+  // Clica e aguarda navegação
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'networkidle2' }),
-    faturador.click()
+    page.evaluate(() => {
+      const shadow = document.querySelector('navigation-hamburger-menu').shadowRoot;
+      const faturador = shadow.querySelector('[data-test-tag="menu__button-invoicer-console"]');
+      faturador.click();
+    })
   ]);
 
   await delay(await getRandomDelay(2000, 2500));
@@ -92,7 +132,7 @@ async function navigate(page) {
     // ===== 3. calcular datas (MM/DD/YYYY) =====
     const hoje = new Date();
     const de = new Date();
-    
+
 
     de.setDate(hoje.getDate() - 4);
 
